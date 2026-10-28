@@ -17,7 +17,7 @@ export class JsonMarketCatalog implements MarketCatalog {
     private readonly activeMarkets: ReadonlySet<string>,
   ) {}
 
-  static load(file = 'src/infra/contracts/markets.json', schemaFile = 'src/infra/contracts/markets.schema.json'): JsonMarketCatalog {
+  static load(file = 'src/infra/schemas/markets.json', schemaFile = 'src/infra/schemas/markets.schema.json'): JsonMarketCatalog {
     const catalog = loadSchemaValidator<CatalogFile>(schemaFile)(JSON.parse(readFileSync(file, 'utf8')));
     return new JsonMarketCatalog(
       new Map(catalog.assets.map((asset) => [asset.assetId, asset.precision])),

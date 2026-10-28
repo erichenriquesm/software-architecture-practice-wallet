@@ -78,7 +78,7 @@ describe('POST /deposit and /withdraw', () => {
     const outbox = await database.db.selectFrom('outbox').select(['routing_key', 'envelope']).where(sql<string>`envelope->'payload'->>'accountId'`, '=', accountId).execute();
     expect(outbox.map((row) => row.routing_key)).toEqual(['wallet.balanceChanged']);
     const envelope = loadEnvelopeValidator()(outbox[0]?.envelope);
-    expect(loadSchemaValidator('src/infra/contracts/published/events/wallet.balanceChanged.v1.schema.json')(envelope.payload)).toMatchObject({
+    expect(loadSchemaValidator('src/infra/schemas/published/events/wallet.balanceChanged.v1.schema.json')(envelope.payload)).toMatchObject({
       accountId,
       assetId: 'USD',
       available: '150.50000000',

@@ -11,7 +11,7 @@ import type { SchemaValidator } from '../../platform/messaging/schemas.js';
 
 /** Inbound ACL: checks the event type and version, then validates the payload against our copy of the contract. */
 export const consumedEvent = <TPayload>(type: string): ((envelope: Envelope) => TPayload) => {
-  const validate: SchemaValidator<TPayload> = loadSchemaValidator(`src/infra/contracts/consumed/events/${type}.v1.schema.json`);
+  const validate: SchemaValidator<TPayload> = loadSchemaValidator(`src/infra/schemas/consumed/events/${type}.v1.schema.json`);
   return (envelope) => {
     if (envelope.type !== type || envelope.version !== 1) {
       throw new ContractViolationError(type, `unexpected ${envelope.type} v${envelope.version}`);

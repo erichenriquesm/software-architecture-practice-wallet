@@ -3,10 +3,10 @@ x-watch: &watch
     - action: sync
       path: ../src
       target: /app/src
-      ignore: [infra/generated/, infra/contracts/]
+      ignore: [infra/generated/, infra/schemas/]
     - action: sync+restart
-      path: ../src/infra/contracts
-      target: /app/src/infra/contracts
+      path: ../src/infra/schemas
+      target: /app/src/infra/schemas
     - action: rebuild
       path: ../package.json
     - action: rebuild

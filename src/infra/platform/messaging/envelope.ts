@@ -47,7 +47,7 @@ export const createEnvelope = <TPayload>(
 
 export type EnvelopeValidator = (candidate: unknown) => Envelope;
 
-export const loadEnvelopeValidator = (schemaFile = 'src/infra/contracts/envelope.schema.json'): EnvelopeValidator => {
+export const loadEnvelopeValidator = (schemaFile = 'src/infra/schemas/envelope.schema.json'): EnvelopeValidator => {
   const ajv = new Ajv2020({ strict: true, allErrors: true });
   addFormats.default(ajv);
   const validate = ajv.compile(JSON.parse(readFileSync(schemaFile, 'utf8')));
