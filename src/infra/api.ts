@@ -3,7 +3,7 @@ import { buildWalletApi, serviceName } from './composition.js';
 import { createDatabase } from './database/postgres.js';
 import { GrpcAccountGateway } from './grpc/account/grpcAccountGateway.js';
 import { RedisRateLimiter } from './platform/http/rateLimit/rateLimiter.js';
-import { accountGrpcSettings, apiPortSetting, postgresSettings, rateLimitSetting, redisSettings, trustedProxySubnets } from './settings.js';
+import { accountGrpcSettings, apiPortSetting, postgresSettings, rateLimitSetting, redisSettings, trustedProxySubnets, userTokenPublicKeySetting } from './settings.js';
 
 const db = createDatabase(postgresSettings());
 const redis = new Redis({
@@ -18,6 +18,7 @@ const accountGateway = new GrpcAccountGateway(accountGrpcSettings());
 const { app } = buildWalletApi({
   db,
   accountGateway,
+  userTokenPublicKey: userTokenPublicKeySetting(),
   rateLimiter: new RedisRateLimiter(redis, serviceName),
   rateLimits: {
     movementPerIp: rateLimitSetting('RATE_LIMITS_MOVEMENT_PER_IP', '30/1m'),

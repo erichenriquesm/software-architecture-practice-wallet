@@ -12,8 +12,10 @@ const statusOf = async (probe: DependencyProbe): Promise<[string, Status]> => {
   return [probe.dependency, healthy ? 'up' : 'down'];
 };
 
+export const healthRoute = '/health';
+
 export const registerHealthRoutes = (app: FastifyInstance, service: string, probes: readonly DependencyProbe[]): void => {
-  app.get('/health', async (_request, reply) => {
+  app.get(healthRoute, async (_request, reply) => {
     const checks = Object.fromEntries(await Promise.all(probes.map(statusOf)));
     const status: Status = Object.values(checks).every((check) => check === 'up') ? 'up' : 'down';
     return reply.status(status === 'up' ? 200 : 503).send({ service, status, checks });

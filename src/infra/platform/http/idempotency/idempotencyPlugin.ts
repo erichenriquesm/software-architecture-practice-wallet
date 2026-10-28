@@ -11,7 +11,12 @@ declare module 'fastify' {
   }
 }
 
-const scopeOf = (request: FastifyRequest): string => `${request.method} ${request.routeOptions.url ?? request.url}`;
+/** A key belongs to the user that sent it: the same key from another user is a different request. */
+const scopeOf = (request: FastifyRequest): string => {
+  const route = `${request.method} ${request.routeOptions.url ?? request.url}`;
+  if (request.userAccountId === undefined) return route;
+  return `${route} ${request.userAccountId}`;
+};
 
 const hashOf = (body: unknown): string => createHash('sha256').update(JSON.stringify(body ?? null)).digest('hex');
 

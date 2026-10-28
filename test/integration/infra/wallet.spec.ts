@@ -10,16 +10,22 @@ import { createTestDatabase } from '../../support/database.js';
 import type { WalletCore } from '../../../src/infra/composition.js';
 import { buildWalletApi } from '../../../src/infra/composition.js';
 import { AccountServiceUnavailableError, GrpcAccountGateway } from '../../../src/infra/grpc/account/grpcAccountGateway.js';
-import type { RateLimiter } from '../../../src/infra/platform/http/rateLimit/rateLimiter.js';
+import type { RateLimitCheck, RateLimiter } from '../../../src/infra/platform/http/rateLimit/rateLimiter.js';
 import { loadEnvelopeValidator } from '../../../src/infra/platform/messaging/envelope.js';
 import { loadSchemaValidator } from '../../../src/infra/platform/messaging/schemas.js';
+import { createUserTokenSigner, nowSeconds } from '../../support/userTokens.js';
 
 const grpcToken = 'internal-grpc-test';
 const fastRetries = { baseMs: 1, capMs: 5, maxAttempts: 3 };
 
+const checked: RateLimitCheck[] = [];
 const unlimited: RateLimiter = {
-  check: async (check) => ({ allowed: true, remaining: check.policy.limit, resetSeconds: 0, retryAfterSeconds: 0, policy: check.policy }),
+  check: async (check) => {
+    checked.push(check);
+    return { allowed: true, remaining: check.policy.limit, resetSeconds: 0, retryAfterSeconds: 0, policy: check.policy };
+  },
 };
+const users = createUserTokenSigner('wallet');
 
 let database: TestDatabase;
 let account: FakeAccount;
@@ -34,7 +40,10 @@ const newAccount = (): string => {
 };
 
 const post = (url: '/deposit' | '/withdraw', accountId: string, assetId: string, quantity: string) =>
-  app.inject({ method: 'POST', url, payload: { accountId, assetId, quantity } });
+  app.inject({ method: 'POST', url, payload: { assetId, quantity }, headers: users.bearer(accountId) });
+
+const depositWith = (headers: Record<string, string>, payload: Record<string, unknown> = { assetId: 'USD', quantity: '10' }) =>
+  app.inject({ method: 'POST', url: '/deposit', payload, headers });
 
 const balanceOf = async (accountId: string, assetId: string) =>
   database.db.selectFrom('balance').select(['available', 'reserved']).where('account_id', '=', accountId).where('asset_id', '=', assetId).executeTakeFirst();
@@ -47,7 +56,7 @@ beforeAll(async () => {
     token: grpcToken,
     retryPolicy: fastRetries,
   });
-  ({ app, core } = buildWalletApi({ db: database.db, accountGateway: gateway, rateLimiter: unlimited }));
+  ({ app, core } = buildWalletApi({ db: database.db, accountGateway: gateway, userTokenPublicKey: users.publicKey, rateLimiter: unlimited }));
 });
 
 afterEach(() => {
@@ -125,6 +134,84 @@ describe('POST /deposit and /withdraw', () => {
 
     // When & Then
     await expect(sql`update balance set available = -1 where account_id = ${accountId}`.execute(database.db)).rejects.toThrowError(/balance_available_not_negative/);
+  });
+});
+
+describe('User token on the REST routes', () => {
+  test('Should answer 401 unauthenticated without an Authorization header, and leave the health route public', async () => {
+    // When
+    const deposit = await depositWith({});
+    const withdraw = await app.inject({ method: 'POST', url: '/withdraw', payload: { assetId: 'USD', quantity: '1' } });
+    const health = await app.inject({ method: 'GET', url: '/health' });
+
+    // Then
+    expect([deposit.statusCode, withdraw.statusCode]).toEqual([401, 401]);
+    expect(deposit.json()).toMatchObject({ error: 'unauthenticated' });
+    expect(health.statusCode).toBe(200);
+  });
+
+  test.each([
+    ['another audience', () => users.bearer(randomUUID(), { aud: 'order' })],
+    ['an expired token', () => users.bearer(randomUUID(), { exp: nowSeconds() - 10 })],
+    ['a token signed with another key', () => createUserTokenSigner('wallet').bearer(randomUUID())],
+    ['a token that is not a JWT', () => ({ authorization: 'Bearer not-a-jwt' })],
+    ['a scheme other than Bearer', () => ({ authorization: `Basic ${users.token(randomUUID())}` })],
+  ])('Should answer 401 unauthenticated for %s', async (_case, headersOf) => {
+    // Given
+    const accountId = newAccount();
+
+    // When
+    const response = await depositWith(headersOf());
+
+    // Then
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: 'unauthenticated' });
+    expect(await balanceOf(accountId, 'USD')).toBeUndefined();
+  });
+
+  test("Should land the deposit on the token's account and limit the rate by that account", async () => {
+    // Given
+    const accountId = newAccount();
+    checked.length = 0;
+
+    // When
+    const response = await depositWith(users.bearer(accountId));
+
+    // Then
+    expect(response.statusCode).toBe(204);
+    expect(await balanceOf(accountId, 'USD')).toMatchObject({ available: '10.00000000' });
+    expect(checked.map((check) => check.subject)).toContain(`account:${accountId}`);
+  });
+
+  test('Should refuse an accountId in the body with 422 invalidRequest', async () => {
+    // Given
+    const accountId = newAccount();
+    const otherAccountId = newAccount();
+
+    // When
+    const response = await depositWith(users.bearer(accountId), { accountId: otherAccountId, assetId: 'USD', quantity: '10' });
+
+    // Then
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: 'invalidRequest' });
+    expect(await balanceOf(accountId, 'USD')).toBeUndefined();
+    expect(await balanceOf(otherAccountId, 'USD')).toBeUndefined();
+  });
+
+  test('Should keep the Idempotency-Key of one user from replaying for another user', async () => {
+    // Given
+    const firstAccountId = newAccount();
+    const secondAccountId = newAccount();
+    const idempotencyKey = randomUUID();
+
+    // When
+    const first = await depositWith({ ...users.bearer(firstAccountId), 'idempotency-key': idempotencyKey });
+    const second = await depositWith({ ...users.bearer(secondAccountId), 'idempotency-key': idempotencyKey });
+
+    // Then
+    expect([first.statusCode, second.statusCode]).toEqual([204, 204]);
+    expect(second.headers['idempotent-replayed']).toBeUndefined();
+    expect(await balanceOf(secondAccountId, 'USD')).toMatchObject({ available: '10.00000000' });
   });
 });
 

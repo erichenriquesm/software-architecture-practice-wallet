@@ -1,3 +1,4 @@
+import type { KeyObject } from 'node:crypto';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import type { Kysely } from 'kysely';
@@ -19,7 +20,7 @@ import { KyselyVoidedOrders } from './database/kyselyVoidedOrders.js';
 import { KyselyWalletRepository } from './database/kyselyWalletRepository.js';
 import { PostgresProbe } from './database/postgres.js';
 import type { DependencyProbe } from './http/health.js';
-import { registerHealthRoutes } from './http/health.js';
+import { healthRoute, registerHealthRoutes } from './http/health.js';
 import type { WalletRateLimits } from './http/walletRoutes.js';
 import { defaultWalletRateLimits, registerWalletRoutes, walletErrorMappings, walletRateLimitGroups } from './http/walletRoutes.js';
 import { OutboxEventPublisher } from './messaging/outboxEventPublisher.js';
@@ -28,6 +29,7 @@ import { registerIdempotency } from './platform/http/idempotency/idempotencyPlug
 import { KyselyIdempotencyStore } from './platform/http/idempotency/idempotencyStore.js';
 import type { RateLimiter } from './platform/http/rateLimit/rateLimiter.js';
 import { registerRateLimit } from './platform/http/rateLimit/rateLimitPlugin.js';
+import { registerUserTokenGuard } from './platform/security/userToken.js';
 import { SystemClock } from './system.js';
 
 export const serviceName = 'wallet';
@@ -64,6 +66,7 @@ export const buildWalletCore = (dependencies: WalletCoreDependencies) => {
 export type WalletCore = ReturnType<typeof buildWalletCore>;
 
 export interface WalletApiDependencies extends WalletCoreDependencies {
+  readonly userTokenPublicKey: KeyObject;
   readonly rateLimiter: RateLimiter;
   readonly rateLimits?: WalletRateLimits;
   readonly extraProbes?: readonly DependencyProbe[];
@@ -73,8 +76,14 @@ export interface WalletApiDependencies extends WalletCoreDependencies {
 
 export const buildWalletApi = (dependencies: WalletApiDependencies): { app: FastifyInstance; core: WalletCore } => {
   const core = buildWalletCore(dependencies);
-  const app = Fastify({ logger: dependencies.logger ?? false, trustProxy: dependencies.trustProxy ?? false });
+  const app = Fastify({
+    logger: dependencies.logger ?? false,
+    trustProxy: dependencies.trustProxy ?? false,
+    // Fastify strips unknown body fields by default; refusing them makes a stale client sending accountId fail loudly.
+    ajv: { customOptions: { removeAdditional: false } },
+  });
   registerErrorMapping(app, walletErrorMappings);
+  registerUserTokenGuard(app, { publicKey: dependencies.userTokenPublicKey, audience: serviceName, publicRoutes: new Set([healthRoute]) });
   registerRateLimit(app, {
     limiter: dependencies.rateLimiter,
     groups: walletRateLimitGroups(dependencies.rateLimits ?? defaultWalletRateLimits),

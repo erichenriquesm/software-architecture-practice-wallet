@@ -1,7 +1,9 @@
+import type { KeyObject } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import type { PostgresSettings } from './database/postgres.js';
 import { MissingConfigurationError, numberEnv, requiredEnv } from './platform/config/env.js';
 import type { RateLimitPolicy } from './platform/http/rateLimit/slidingWindow.js';
+import { userTokenPublicKey } from './platform/security/userToken.js';
 
 export const apiPortSetting = (): number => numberEnv('API_PORT', 3000);
 
@@ -39,6 +41,9 @@ export const accountGrpcSettings = (): AccountGrpcSettings => ({
   address: requiredEnv('ACCOUNT_GRPC_ADDR'),
   token: requiredEnv('ACCOUNT_GRPC_TOKEN'),
 });
+
+/** Ed25519 public key (PEM on one line, literal \n for line breaks) that verifies the user JWT sent by the edge. */
+export const userTokenPublicKeySetting = (env: NodeJS.ProcessEnv = process.env): KeyObject => userTokenPublicKey(requiredEnv('USER_TOKEN_PUBLIC_KEY', env));
 
 const unitMs: ReadonlyMap<string, number> = new Map([
   ['s', 1_000],

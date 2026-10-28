@@ -12,6 +12,7 @@ import type { ErrorMapping } from '../platform/http/errors/errorMapping.js';
 import type { RateLimitGroup } from '../platform/http/rateLimit/rateLimitPlugin.js';
 import type { RateLimitPolicy } from '../platform/http/rateLimit/slidingWindow.js';
 import { correlationFrom, withCorrelation } from '../platform/observability/correlation.js';
+import { userAccountIdOf } from '../platform/security/userToken.js';
 
 export interface WalletRateLimits {
   readonly movementPerIp: Omit<RateLimitPolicy, 'name'>;
@@ -33,11 +34,6 @@ export const walletErrorMappings: readonly ErrorMapping[] = [
   { error: AccountServiceUnavailableError, statusCode: 503, code: 'accountServiceUnavailable' },
 ];
 
-const accountIdOf = (request: FastifyRequest): string | undefined => {
-  const accountId = (request.body as { accountId?: unknown } | undefined)?.accountId;
-  return typeof accountId === 'string' ? accountId : undefined;
-};
-
 const isMovement = (request: FastifyRequest): boolean =>
   request.method === 'POST' && (request.routeOptions.url === '/deposit' || request.routeOptions.url === '/withdraw');
 
@@ -46,20 +42,24 @@ export const walletRateLimitGroups = (limits: WalletRateLimits): readonly RateLi
     name: 'movement',
     matches: isMovement,
     perIp: limits.movementPerIp,
-    perSubject: { label: 'account', ...limits.movementPerAccount, subjectOf: accountIdOf },
+    perSubject: { label: 'account', ...limits.movementPerAccount, subjectOf: (request) => request.userAccountId },
   },
 ];
 
 const movementBody = {
   type: 'object',
-  required: ['accountId', 'assetId', 'quantity'],
+  required: ['assetId', 'quantity'],
   additionalProperties: false,
   properties: {
-    accountId: { type: 'string', maxLength: 36 },
     assetId: { type: 'string', maxLength: 5 },
     quantity: { type: 'string', maxLength: 40 },
   },
 } as const;
+
+interface MovementBody {
+  readonly assetId: string;
+  readonly quantity: string;
+}
 
 export interface WalletRouteUseCases {
   readonly deposit: Deposit;
@@ -71,14 +71,14 @@ const correlationOf = (request: FastifyRequest) => correlationFrom(request.heade
 export const registerWalletRoutes = (app: FastifyInstance, useCases: WalletRouteUseCases): void => {
   app.post('/deposit', { schema: { body: movementBody } }, async (request, reply) => {
     const correlation = correlationOf(request);
-    const movement = request.body as DepositInput;
+    const movement: DepositInput = { ...(request.body as MovementBody), accountId: userAccountIdOf(request) };
     await withCorrelation(correlation, () => useCases.deposit.execute(movement));
     return reply.status(204).header('x-correlation-id', correlation.correlationId).send();
   });
 
   app.post('/withdraw', { schema: { body: movementBody } }, async (request, reply) => {
     const correlation = correlationOf(request);
-    const movement = request.body as WithdrawInput;
+    const movement: WithdrawInput = { ...(request.body as MovementBody), accountId: userAccountIdOf(request) };
     await withCorrelation(correlation, () => useCases.withdraw.execute(movement));
     return reply.status(204).header('x-correlation-id', correlation.correlationId).send();
   });

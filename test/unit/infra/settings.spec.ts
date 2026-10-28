@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { rateLimitSetting } from '../../../src/infra/settings.js';
+import { rateLimitSetting, userTokenPublicKeySetting } from '../../../src/infra/settings.js';
 
 describe('rateLimitSetting', () => {
   test.each([
@@ -15,5 +15,23 @@ describe('rateLimitSetting', () => {
     // When & Then
     expect(rateLimitSetting('RATE_LIMITS_TEST', '3/1h', {})).toEqual({ limit: 3, windowMs: 3_600_000 });
     expect(() => rateLimitSetting('RATE_LIMITS_TEST', '3/1h', { RATE_LIMITS_TEST: 'many' })).toThrowError('RATE_LIMITS_TEST');
+  });
+});
+
+describe('userTokenPublicKeySetting', () => {
+  test('Should read the Ed25519 public key written on one line with literal \\n', () => {
+    // Given
+    const env = { USER_TOKEN_PUBLIC_KEY: '-----BEGIN PUBLIC KEY-----\\nMCowBQYDK2VwAyEALxCEnICerfG52kOtFCaYrwczs5XMniydqmd9Si/Pf2I=\\n-----END PUBLIC KEY-----\\n' };
+
+    // When
+    const key = userTokenPublicKeySetting(env);
+
+    // Then
+    expect(key.asymmetricKeyType).toBe('ed25519');
+  });
+
+  test('Should require the variable', () => {
+    // When & Then
+    expect(() => userTokenPublicKeySetting({})).toThrowError('USER_TOKEN_PUBLIC_KEY');
   });
 });
