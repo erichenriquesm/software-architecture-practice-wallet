@@ -29,6 +29,8 @@ Depósito e saque seguem o mesmo caminho, a partir da rota em `src/infra/http/wa
 | `POST /deposit` | `204` · `404` conta · `422` ativo/quantidade · `409` · `503` |
 | `POST /withdraw` | `204` · saldo reservado não é sacável |
 
+**Usuário:** toda rota acima exige o JWT interno do usuário em `Authorization: Bearer …`, que o edge troca pelo cookie de sessão (`aud: wallet`, assinado pelo `account`, 60 s). Sem token válido → `401 unauthenticated`. O `accountId` vem do `sub` do token, nunca do corpo; um corpo com campo fora do contrato (inclusive `accountId`) → `422`. A chave pública vem de `USER_TOKEN_PUBLIC_KEY` no `.env` ([autenticação §6](https://github.com/erichenriquesm/software-architecture-practice/blob/main/sdd/08-autenticacao-entre-servicos.md)).
+
 **gRPC interno:** o wallet não expõe gRPC. É só cliente de `AccountService.Exists` (fallback quando `account.created` ainda não chegou): deadline de 500 ms, retry com jitter nos códigos transitórios, `NOT_FOUND` = conta não existe, token compartilhado em `x-service-token` (`ACCOUNT_GRPC_TOKEN`).
 
 ## Eventos (RabbitMQ)
