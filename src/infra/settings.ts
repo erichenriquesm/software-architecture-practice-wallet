@@ -1,5 +1,4 @@
 import type { KeyObject } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
 import type { PostgresSettings } from './database/postgres.js';
 import { MissingConfigurationError, numberEnv, requiredEnv } from './platform/config/env.js';
 import type { RateLimitPolicy } from './platform/http/rateLimit/slidingWindow.js';
@@ -60,8 +59,5 @@ export const rateLimitSetting = (key: string, fallback: string, env: NodeJS.Proc
   return { limit: Number(limit), windowMs: Number(amount) * (unitMs.get(String(unit)) ?? 0) };
 };
 
-export const trustedProxySubnets = (): string[] =>
-  Object.values(networkInterfaces())
-    .flatMap((addresses) => addresses ?? [])
-    .filter((address) => address.family === 'IPv4' && !address.internal && address.cidr !== null)
-    .map((address) => String(address.cidr));
+/** Host whose X-Forwarded-For is trusted: only the edge, resolved by name, so a direct caller never picks its own client IP. */
+export const trustedProxyHostSetting = (env: NodeJS.ProcessEnv = process.env): string => env.TRUSTED_PROXY_HOST || 'edge';

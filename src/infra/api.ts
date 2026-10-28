@@ -3,7 +3,8 @@ import { buildWalletApi, serviceName } from './composition.js';
 import { createDatabase } from './database/postgres.js';
 import { GrpcAccountGateway } from './grpc/account/grpcAccountGateway.js';
 import { RedisRateLimiter } from './platform/http/rateLimit/rateLimiter.js';
-import { accountGrpcSettings, apiPortSetting, postgresSettings, rateLimitSetting, redisSettings, trustedProxySubnets, userTokenPublicKeySetting } from './settings.js';
+import { createTrustedProxy } from './platform/http/trustedProxy.js';
+import { accountGrpcSettings, apiPortSetting, postgresSettings, rateLimitSetting, redisSettings, trustedProxyHostSetting, userTokenPublicKeySetting } from './settings.js';
 
 const db = createDatabase(postgresSettings());
 const redis = new Redis({
@@ -15,6 +16,11 @@ const redis = new Redis({
 
 const accountGateway = new GrpcAccountGateway(accountGrpcSettings());
 
+const edgeProxy = createTrustedProxy({
+  hostname: trustedProxyHostSetting(),
+  onError: (error) => app.log.warn({ err: error }, 'edge lookup failed, keeping the last known address'),
+});
+
 const { app } = buildWalletApi({
   db,
   accountGateway,
@@ -24,11 +30,12 @@ const { app } = buildWalletApi({
     movementPerIp: rateLimitSetting('RATE_LIMITS_MOVEMENT_PER_IP', '30/1m'),
     movementPerAccount: rateLimitSetting('RATE_LIMITS_MOVEMENT_PER_ACCOUNT', '10/1m'),
   },
-  trustProxy: trustedProxySubnets(),
+  trustProxy: edgeProxy.trust,
   logger: true,
 });
 
 const shutdown = async (): Promise<void> => {
+  edgeProxy.stop();
   await app.close();
   accountGateway.close();
   redis.disconnect();
@@ -37,4 +44,5 @@ const shutdown = async (): Promise<void> => {
 process.once('SIGTERM', shutdown);
 process.once('SIGINT', shutdown);
 
+await edgeProxy.start();
 await app.listen({ host: '0.0.0.0', port: apiPortSetting() });

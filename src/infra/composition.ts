@@ -70,7 +70,7 @@ export interface WalletApiDependencies extends WalletCoreDependencies {
   readonly rateLimiter: RateLimiter;
   readonly rateLimits?: WalletRateLimits;
   readonly extraProbes?: readonly DependencyProbe[];
-  readonly trustProxy?: string[] | boolean;
+  readonly trustProxy?: (address: string, hop: number) => boolean;
   readonly logger?: boolean;
 }
 
