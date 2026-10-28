@@ -7,7 +7,7 @@ RUN npm ci --ignore-scripts
 FROM deps AS dev
 COPY . .
 RUN npm run proto:gen
-CMD ["npx", "tsx", "watch", "src/infra/api.ts"]
+CMD ["npx", "tsx", "src/infra/api.ts"]
 
 FROM dev AS build
 RUN npm run check && npm run build

@@ -5,14 +5,13 @@ import type { TransactionRunner } from '../contracts/transactionRunner.js';
 import type { VoidedOrders } from '../contracts/voidedOrders.js';
 import type { WalletRepository } from '../contracts/walletRepository.js';
 import { retryOnConflict } from './retryOnConflict.js';
-import type { UseCase } from './useCase.js';
 import type { WalletStore } from './walletStore.js';
 
 /**
  * Saga S2 compensation (order.voided): writes the tombstone first, then frees whatever is still reserved.
  * The wallet is read inside the transaction, after the tombstone lock, so a reservation that raced it is seen.
  */
-export class CompensateReservation implements UseCase<[orderId: string, accountId: string], void> {
+export class CompensateReservation {
   constructor(
     private readonly walletRepository: WalletRepository,
     private readonly walletStore: WalletStore,

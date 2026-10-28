@@ -6,7 +6,6 @@ import type { Clock } from '../application/contracts/clock.js';
 import type { MarketCatalog } from '../application/contracts/marketCatalog.js';
 import { CompensateReservation } from '../application/usecases/compensateReservation.js';
 import { Deposit } from '../application/usecases/deposit.js';
-import { GetBalances } from '../application/usecases/getBalances.js';
 import { OpenWallet } from '../application/usecases/openWallet.js';
 import { ReleaseReservation } from '../application/usecases/releaseReservation.js';
 import { ReserveFunds } from '../application/usecases/reserveFunds.js';
@@ -15,7 +14,6 @@ import { WalletStore } from '../application/usecases/walletStore.js';
 import { Withdraw } from '../application/usecases/withdraw.js';
 import { JsonMarketCatalog } from './catalog/jsonMarketCatalog.js';
 import type { Database } from './database/database.js';
-import { KyselyBalanceDao } from './database/kyselyBalanceDao.js';
 import { KyselyTransactionRunner } from './database/kyselyTransactionRunner.js';
 import { KyselyVoidedOrders } from './database/kyselyVoidedOrders.js';
 import { KyselyWalletRepository } from './database/kyselyWalletRepository.js';
@@ -24,8 +22,7 @@ import type { DependencyProbe } from './http/health.js';
 import { registerHealthRoutes } from './http/health.js';
 import type { WalletRateLimits } from './http/walletRoutes.js';
 import { defaultWalletRateLimits, registerWalletRoutes, walletErrorMappings, walletRateLimitGroups } from './http/walletRoutes.js';
-import { registerWalletIntegrationEvents } from './messaging/walletIntegrationEvents.js';
-import { InProcessDomainEventDispatcher } from './platform/events/inProcessDomainEventDispatcher.js';
+import { OutboxEventPublisher } from './messaging/outboxEventPublisher.js';
 import { registerErrorMapping } from './platform/http/errors/errorMapping.js';
 import { registerIdempotency } from './platform/http/idempotency/idempotencyPlugin.js';
 import { KyselyIdempotencyStore } from './platform/http/idempotency/idempotencyStore.js';
@@ -45,24 +42,22 @@ export interface WalletCoreDependencies {
 /** Every use case wired to its adapters; shared by the api and the worker processes. */
 export const buildWalletCore = (dependencies: WalletCoreDependencies) => {
   const runner = new KyselyTransactionRunner(dependencies.db);
-  const dispatcher = new InProcessDomainEventDispatcher();
-  registerWalletIntegrationEvents(dispatcher, runner);
+  const eventPublisher = new OutboxEventPublisher(runner);
   const walletRepository = new KyselyWalletRepository(runner);
   const voidedOrders = new KyselyVoidedOrders(runner);
   const marketCatalog = dependencies.marketCatalog ?? JsonMarketCatalog.load();
   const clock = dependencies.clock ?? new SystemClock();
-  const walletStore = new WalletStore(walletRepository, dependencies.accountGateway, runner, dispatcher);
+  const walletStore = new WalletStore(walletRepository, dependencies.accountGateway, runner, eventPublisher);
   return {
     runner,
     walletRepository,
     openWallet: new OpenWallet(walletRepository, walletStore),
     deposit: new Deposit(walletStore, marketCatalog, clock),
     withdraw: new Withdraw(walletStore, marketCatalog, clock),
-    reserveFunds: new ReserveFunds(walletStore, voidedOrders, marketCatalog, runner, dispatcher, clock),
+    reserveFunds: new ReserveFunds(walletStore, voidedOrders, marketCatalog, runner, eventPublisher, clock),
     settleTradeSide: new SettleTradeSide(walletStore, clock),
     releaseReservation: new ReleaseReservation(walletStore, clock),
     compensateReservation: new CompensateReservation(walletRepository, walletStore, voidedOrders, runner, clock),
-    getBalances: new GetBalances(new KyselyBalanceDao(runner)),
   };
 };
 

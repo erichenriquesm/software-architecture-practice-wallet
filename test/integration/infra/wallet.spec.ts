@@ -9,13 +9,13 @@ import type { TestDatabase } from '../../support/database.js';
 import { createTestDatabase } from '../../support/database.js';
 import type { WalletCore } from '../../../src/infra/composition.js';
 import { buildWalletApi } from '../../../src/infra/composition.js';
-import { GrpcAccountGateway } from '../../../src/infra/grpc/account/grpcAccountGateway.js';
-import { startWalletGrpcServer } from '../../../src/infra/grpc/walletGrpcServer.js';
-import { WalletServiceClient } from '../../../src/infra/generated/wallet.js';
+import { AccountServiceUnavailableError, GrpcAccountGateway } from '../../../src/infra/grpc/account/grpcAccountGateway.js';
 import type { RateLimiter } from '../../../src/infra/platform/http/rateLimit/rateLimiter.js';
 import { loadEnvelopeValidator } from '../../../src/infra/platform/messaging/envelope.js';
 import { loadSchemaValidator } from '../../../src/infra/platform/messaging/schemas.js';
-import { identify, parseAllowedCallers } from '../../../src/infra/platform/security/serviceAuth.js';
+
+const grpcToken = 'internal-grpc-test';
+const fastRetries = { baseMs: 1, capMs: 5, maxAttempts: 3 };
 
 const unlimited: RateLimiter = {
   check: async (check) => ({ allowed: true, remaining: check.policy.limit, resetSeconds: 0, retryAfterSeconds: 0, policy: check.policy }),
@@ -41,17 +41,18 @@ const balanceOf = async (accountId: string, assetId: string) =>
 
 beforeAll(async () => {
   database = await createTestDatabase();
-  account = await startFakeAccount(parseAllowedCallers('wallet:wallet-grpc-test'));
+  account = await startFakeAccount(grpcToken);
   gateway = new GrpcAccountGateway({
     address: account.address,
-    identity: { name: 'wallet', token: 'wallet-grpc-test' },
-    retryPolicy: { baseMs: 1, capMs: 5, maxAttempts: 3 },
+    token: grpcToken,
+    retryPolicy: fastRetries,
   });
   ({ app, core } = buildWalletApi({ db: database.db, accountGateway: gateway, rateLimiter: unlimited }));
 });
 
 afterEach(() => {
   account.unavailable = false;
+  account.notFound = false;
   account.calls = 0;
 });
 
@@ -149,31 +150,30 @@ describe('Reservation and its compensation (saga S2) on Postgres', () => {
   });
 });
 
-describe('WalletService.GetBalances with name + token', () => {
-  test('Should answer the account service, refuse a wrong token and answer NOT_FOUND for an unknown wallet', async () => {
+describe('AccountService.Exists through the gateway', () => {
+  test('Should send the shared token, read NOT_FOUND as "does not exist" and retry transient failures', async () => {
     // Given
     const accountId = newAccount();
-    await post('/deposit', accountId, 'BTC', '0.5');
-    const { server, port } = await startWalletGrpcServer({
-      getBalances: core.getBalances,
-      allowedCallers: parseAllowedCallers('account:account-grpc-test'),
-      address: '127.0.0.1:0',
-    });
-    const client = new WalletServiceClient(`127.0.0.1:${port}`, grpc.credentials.createInsecure());
-    const getBalancesAs = (token: string, id: string) =>
-      new Promise((resolve, reject) =>
-        client.getBalances({ accountId: id }, identify(new grpc.Metadata(), { name: 'account', token }), (error, response) =>
-          error ? reject(error) : resolve(response),
-        ),
-      );
+    const unknownAccountId = randomUUID();
 
     // When & Then
-    await expect(getBalancesAs('account-grpc-test', accountId)).resolves.toMatchObject({
-      balances: [{ assetId: 'BTC', available: '0.50000000', reserved: '0.00000000' }],
-    });
-    await expect(getBalancesAs('wrong', accountId)).rejects.toMatchObject({ code: grpc.status.UNAUTHENTICATED });
-    await expect(getBalancesAs('account-grpc-test', randomUUID())).rejects.toMatchObject({ code: grpc.status.NOT_FOUND });
-    client.close();
-    server.forceShutdown();
+    await expect(gateway.exists(accountId)).resolves.toBe(true);
+    await expect(gateway.exists(unknownAccountId)).resolves.toBe(false);
+    account.notFound = true;
+    await expect(gateway.exists(unknownAccountId)).resolves.toBe(false);
+    account.unavailable = true;
+    account.calls = 0;
+    await expect(gateway.exists(accountId)).rejects.toBeInstanceOf(AccountServiceUnavailableError);
+    expect(account.calls).toBe(3);
+  });
+
+  test('Should fail without retrying when the token is wrong (UNAUTHENTICATED is permanent)', async () => {
+    // Given
+    const wrongToken = new GrpcAccountGateway({ address: account.address, token: 'wrong', retryPolicy: fastRetries });
+
+    // When & Then
+    await expect(wrongToken.exists(newAccount())).rejects.toMatchObject({ code: grpc.status.UNAUTHENTICATED });
+    expect(account.calls).toBe(0);
+    wrongToken.close();
   });
 });

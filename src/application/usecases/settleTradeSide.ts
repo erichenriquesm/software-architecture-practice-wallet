@@ -5,10 +5,18 @@ import { OrderId } from '../../domain/valueObjects/orderId.js';
 import { Price } from '../../domain/valueObjects/price.js';
 import { Quantity } from '../../domain/valueObjects/quantity.js';
 import type { Clock } from '../contracts/clock.js';
-import type { SettleTradeSideInput } from '../dtos/settleTradeSideDto.js';
 import { retryOnConflict } from './retryOnConflict.js';
-import type { UseCase } from './useCase.js';
 import type { WalletStore } from './walletStore.js';
+
+export interface SettleTradeSideInput {
+  readonly tradeId: string;
+  readonly orderId: string;
+  readonly accountId: string;
+  readonly role: 'buyer' | 'seller';
+  readonly marketId: string;
+  readonly quantity: string;
+  readonly price: string;
+}
 
 const tradeFrom = (input: SettleTradeSideInput): ExecutedTrade => ({
   tradeId: input.tradeId,
@@ -19,7 +27,7 @@ const tradeFrom = (input: SettleTradeSideInput): ExecutedTrade => ({
 });
 
 /** Saga S3: settles one side of a trade. The consumer calls it once for the buyer and once for the seller. */
-export class SettleTradeSide implements UseCase<[input: SettleTradeSideInput], void> {
+export class SettleTradeSide {
   constructor(
     private readonly walletStore: WalletStore,
     private readonly clock: Clock,

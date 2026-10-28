@@ -1,5 +1,4 @@
-import type { SettleTradeSideInput } from '../../../application/dtos/settleTradeSideDto.js';
-import type { SettleTradeSide } from '../../../application/usecases/settleTradeSide.js';
+import type { SettleTradeSide, SettleTradeSideInput } from '../../../application/usecases/settleTradeSide.js';
 import type { ConsumerUnit, MessageHandler } from '../../platform/messaging/consumer.js';
 import type { Envelope } from '../../platform/messaging/envelope.js';
 import type { ConsumerQueue } from '../../platform/messaging/topology.js';

@@ -11,7 +11,7 @@ import { FakeMarketCatalog } from '../../../fakes/fakeMarketCatalog.js';
 import { fixedClock } from '../../../fakes/fixedSystem.js';
 import { InMemoryVoidedOrders } from '../../../fakes/inMemoryVoidedOrders.js';
 import { InMemoryWalletRepository } from '../../../fakes/inMemoryWalletRepository.js';
-import { RecordingDomainEventDispatcher } from '../../../fakes/recordingDomainEventDispatcher.js';
+import { RecordingEventPublisher } from '../../../fakes/recordingEventPublisher.js';
 import { RecordingTransactionRunner } from '../../../fakes/recordingTransactionRunner.js';
 
 export const accountId = '0199d5f4-2b9a-7c3e-9a51-2f1d3c4b5a69';
@@ -25,19 +25,19 @@ export const walletUseCases = () => {
   const accountGateway = new FakeAccountGateway([accountId]);
   const voidedOrders = new InMemoryVoidedOrders();
   const runner = new RecordingTransactionRunner();
-  const dispatcher = new RecordingDomainEventDispatcher();
+  const eventPublisher = new RecordingEventPublisher();
   const catalog = new FakeMarketCatalog();
   const clock = fixedClock(now);
-  const store = new WalletStore(repository, accountGateway, runner, dispatcher);
+  const store = new WalletStore(repository, accountGateway, runner, eventPublisher);
   return {
     repository,
     accountGateway,
     voidedOrders,
-    dispatcher,
+    eventPublisher,
     openWallet: new OpenWallet(repository, store),
     deposit: new Deposit(store, catalog, clock),
     withdraw: new Withdraw(store, catalog, clock),
-    reserveFunds: new ReserveFunds(store, voidedOrders, catalog, runner, dispatcher, clock),
+    reserveFunds: new ReserveFunds(store, voidedOrders, catalog, runner, eventPublisher, clock),
     settleTradeSide: new SettleTradeSide(store, clock),
     releaseReservation: new ReleaseReservation(store, clock),
     compensateReservation: new CompensateReservation(repository, store, voidedOrders, runner, clock),

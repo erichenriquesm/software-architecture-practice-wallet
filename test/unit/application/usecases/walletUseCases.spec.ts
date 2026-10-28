@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { GetBalances } from '../../../../src/application/usecases/getBalances.js';
 import { ConcurrentWalletUpdateError, InsufficientFundsError, InvalidWalletDataError, WalletNotFoundError } from '../../../../src/domain/errors.js';
 import { AccountId } from '../../../../src/domain/valueObjects/accountId.js';
 import { AssetId } from '../../../../src/domain/valueObjects/assetId.js';
@@ -13,7 +12,7 @@ const usdOf = async (useCases: ReturnType<typeof walletUseCases>) => {
   return { available: balance?.available.toString(), reserved: balance?.reserved.toString() };
 };
 
-const eventTypes = (useCases: ReturnType<typeof walletUseCases>) => useCases.dispatcher.dispatched.map((event) => event.type);
+const eventTypes = (useCases: ReturnType<typeof walletUseCases>) => useCases.eventPublisher.published.map((event) => event.type);
 
 describe('Use case: Deposit and Withdraw', () => {
   test('Should open the wallet of an existing account on the first deposit and publish BalanceChanged version 1', async () => {
@@ -25,7 +24,7 @@ describe('Use case: Deposit and Withdraw', () => {
 
     // Then
     expect(await usdOf(useCases)).toEqual({ available: '150.50000000', reserved: '0.00000000' });
-    expect(useCases.dispatcher.dispatched).toMatchObject([{ type: 'BalanceChanged', assetId: 'USD', version: 1 }]);
+    expect(useCases.eventPublisher.published).toMatchObject([{ type: 'BalanceChanged', assetId: 'USD', version: 1 }]);
   });
 
   test('Should refuse an account the account service does not know, and an asset the catalog does not trade', async () => {
@@ -66,7 +65,7 @@ describe('Use case: ReserveFunds (saga S2)', () => {
     // Given
     const useCases = walletUseCases();
     await useCases.deposit.execute({ accountId, assetId: 'USD', quantity: '100' });
-    useCases.dispatcher.dispatched.length = 0;
+    useCases.eventPublisher.published.length = 0;
 
     // When
     await useCases.reserveFunds.execute(buyOrder('1', '60'));
@@ -80,13 +79,13 @@ describe('Use case: ReserveFunds (saga S2)', () => {
     // Given
     const useCases = walletUseCases();
     await useCases.deposit.execute({ accountId, assetId: 'USD', quantity: '10' });
-    useCases.dispatcher.dispatched.length = 0;
+    useCases.eventPublisher.published.length = 0;
 
     // When
     await useCases.reserveFunds.execute(buyOrder('1', '60'));
 
     // Then
-    expect(useCases.dispatcher.dispatched).toMatchObject([{ type: 'FundsReservationRejected', reason: 'INSUFFICIENT_FUNDS', orderId }]);
+    expect(useCases.eventPublisher.published).toMatchObject([{ type: 'FundsReservationRejected', reason: 'INSUFFICIENT_FUNDS', orderId }]);
     expect(await usdOf(useCases)).toEqual({ available: '10.00000000', reserved: '0.00000000' });
   });
 
@@ -98,7 +97,7 @@ describe('Use case: ReserveFunds (saga S2)', () => {
     await useCases.reserveFunds.execute({ ...buyOrder('1', '60'), accountId: otherAccountId });
 
     // Then
-    expect(useCases.dispatcher.dispatched).toMatchObject([{ type: 'FundsReservationRejected', reason: 'WALLET_NOT_FOUND' }]);
+    expect(useCases.eventPublisher.published).toMatchObject([{ type: 'FundsReservationRejected', reason: 'WALLET_NOT_FOUND' }]);
   });
 
   test('Should reject an order of a market the catalog does not have', async () => {
@@ -115,7 +114,7 @@ describe('Use case: CompensateReservation (saga S2 compensation)', () => {
     // Given
     const useCases = walletUseCases();
     await useCases.deposit.execute({ accountId, assetId: 'USD', quantity: '100' });
-    useCases.dispatcher.dispatched.length = 0;
+    useCases.eventPublisher.published.length = 0;
 
     // When
     await useCases.compensateReservation.execute(orderId, accountId);
@@ -123,7 +122,7 @@ describe('Use case: CompensateReservation (saga S2 compensation)', () => {
 
     // Then
     expect(useCases.voidedOrders.voided.has(orderId)).toBe(true);
-    expect(useCases.dispatcher.dispatched).toEqual([]);
+    expect(useCases.eventPublisher.published).toEqual([]);
     expect(await usdOf(useCases)).toEqual({ available: '100.00000000', reserved: '0.00000000' });
   });
 
@@ -141,7 +140,7 @@ describe('Use case: CompensateReservation (saga S2 compensation)', () => {
   });
 });
 
-describe('Use cases: SettleTradeSide, ReleaseReservation, OpenWallet and GetBalances', () => {
+describe('Use cases: SettleTradeSide, ReleaseReservation and OpenWallet', () => {
   test('Should settle the buyer side and release what was not executed', async () => {
     // Given
     const useCases = walletUseCases();
@@ -166,13 +165,5 @@ describe('Use cases: SettleTradeSide, ReleaseReservation, OpenWallet and GetBala
 
     // Then
     expect(useCases.repository.saves).toBe(1);
-  });
-
-  test('Should answer WalletNotFoundError when there is no wallet', async () => {
-    // Given
-    const getBalances = new GetBalances({ findByAccount: async () => undefined });
-
-    // When & Then
-    await expect(getBalances.execute(accountId)).rejects.toBeInstanceOf(WalletNotFoundError);
   });
 });

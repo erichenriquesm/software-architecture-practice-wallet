@@ -7,7 +7,8 @@ import { createTestDatabase } from '../../../../support/database.js';
 import { registerIdempotency } from '../../../../../src/infra/platform/http/idempotency/idempotencyPlugin.js';
 import { KyselyIdempotencyStore } from '../../../../../src/infra/platform/http/idempotency/idempotencyStore.js';
 import type { RateLimitCheck } from '../../../../../src/infra/platform/http/rateLimit/rateLimiter.js';
-import { FallbackRateLimiter, InMemoryRateLimiter, RedisRateLimiter } from '../../../../../src/infra/platform/http/rateLimit/rateLimiter.js';
+import { RedisRateLimiter } from '../../../../../src/infra/platform/http/rateLimit/rateLimiter.js';
+import { registerRateLimit } from '../../../../../src/infra/platform/http/rateLimit/rateLimitPlugin.js';
 
 const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379';
 let redis: Redis;
@@ -32,41 +33,39 @@ const checkAt = (nowMs: number, subject: string): RateLimitCheck => ({
 });
 
 describe('RedisRateLimiter', () => {
-  test('Should take the same decisions as the in-memory limiter for the same sequence', async () => {
+  test('Should allow up to the limit in the sliding window and weight the previous window afterwards', async () => {
     // Given
-    const prefix = `svc${randomUUID().slice(0, 8)}`;
-    const onRedis = new RedisRateLimiter(redis, prefix);
-    const inMemory = new InMemoryRateLimiter(prefix);
+    const limiter = new RedisRateLimiter(redis, `svc${randomUUID().slice(0, 8)}`);
     const moments = [0, 1_000, 2_000, 3_000, 4_000, 5_000, 9_999, 10_500, 14_000, 15_000, 19_000, 25_000];
 
     // When
-    const redisDecisions = [];
-    const memoryDecisions = [];
-    for (const moment of moments) {
-      redisDecisions.push((await onRedis.check(checkAt(moment, 'account:a-1'))).allowed);
-      memoryDecisions.push((await inMemory.check(checkAt(moment, 'account:a-1'))).allowed);
-    }
+    const decisions = [];
+    for (const moment of moments) decisions.push((await limiter.check(checkAt(moment, 'account:a-1'))).allowed);
 
     // Then
-    expect(redisDecisions).toEqual(memoryDecisions);
-    expect(redisDecisions.slice(0, 6)).toEqual([true, true, true, true, true, false]);
+    expect(decisions).toEqual([true, true, true, true, true, false, false, false, true, true, true, true]);
   });
 
-  test('Should keep limiting through the in-memory fallback when Redis is unreachable', async () => {
+  test('Should fail open (allow and log) when Redis is unreachable', async () => {
     // Given
     const unreachable = new Redis('redis://127.0.0.1:1', {
       enableOfflineQueue: false,
       lazyConnect: true,
       retryStrategy: () => null,
     }).on('error', () => undefined);
-    const limiter = new FallbackRateLimiter(new RedisRateLimiter(unreachable, 'svc'), new InMemoryRateLimiter('svc'));
+    const app = Fastify({ logger: false });
+    registerRateLimit(app, {
+      limiter: new RedisRateLimiter(unreachable, 'svc'),
+      groups: [{ name: 'orders', matches: () => true, perIp: { limit: 1, windowMs: 60_000 } }],
+    });
+    app.post('/place_order', async () => ({ ok: true }));
 
     // When
-    const decisions = [];
-    for (let index = 0; index < 6; index += 1) decisions.push((await limiter.check(checkAt(0, 'ip:9.9.9.9'))).allowed);
+    const responses = [await app.inject({ method: 'POST', url: '/place_order' }), await app.inject({ method: 'POST', url: '/place_order' })];
 
     // Then
-    expect(decisions).toEqual([true, true, true, true, true, false]);
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+    expect(responses[0]?.headers['ratelimit']).toBeUndefined();
     unreachable.disconnect();
   });
 });

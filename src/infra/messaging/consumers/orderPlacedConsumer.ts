@@ -1,5 +1,4 @@
-import type { ReserveFundsInput } from '../../../application/dtos/reserveFundsDto.js';
-import type { ReserveFunds } from '../../../application/usecases/reserveFunds.js';
+import type { ReserveFunds, ReserveFundsInput } from '../../../application/usecases/reserveFunds.js';
 import type { MessageHandler } from '../../platform/messaging/consumer.js';
 import type { ConsumerQueue } from '../../platform/messaging/topology.js';
 import { correlationFrom, withCorrelation } from '../../platform/observability/correlation.js';

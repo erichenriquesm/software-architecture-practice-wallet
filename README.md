@@ -18,7 +18,7 @@ Uma reserva de saldo, de ponta a ponta:
 2. `src/application/usecases/reserveFunds.ts`: decide quanto reservar e de qual ativo.
 3. `src/domain/entities/wallet.ts`: a carteira, com as regras de saldo (disponível, reservado, ledger) e os eventos.
 4. `src/infra/database/kyselyWalletRepository.ts`: grava saldo, reserva e ledger no Postgres.
-5. `src/infra/messaging/walletIntegrationEvents.ts`: transforma os eventos em `wallet.fundsReserved` (ou `fundsReservationRejected`) e grava no outbox; o worker publica.
+5. `src/infra/messaging/outboxEventPublisher.ts`: o caso de uso entrega os eventos ao `EventPublisher` dentro da transação; ele os transforma em `wallet.fundsReserved` (ou `fundsReservationRejected`) e grava no outbox; o worker publica.
 
 Depósito e saque seguem o mesmo caminho, a partir da rota em `src/infra/http/walletRoutes.ts`.
 
@@ -29,7 +29,7 @@ Depósito e saque seguem o mesmo caminho, a partir da rota em `src/infra/http/wa
 | `POST /deposit` | `204` · `404` conta · `422` ativo/quantidade · `409` · `503` |
 | `POST /withdraw` | `204` · saldo reservado não é sacável |
 
-**gRPC interno:** Servidor `WalletService.GetBalances` (só o `account` pode chamar). Cliente de `AccountService.Exists`.
+**gRPC interno:** o wallet não expõe gRPC. É só cliente de `AccountService.Exists` (fallback quando `account.created` ainda não chegou): deadline de 500 ms, retry com jitter nos códigos transitórios, `NOT_FOUND` = conta não existe, token compartilhado em `x-service-token` (`ACCOUNT_GRPC_TOKEN`).
 
 ## Eventos (RabbitMQ)
 
@@ -49,7 +49,7 @@ make clone
 make up
 ```
 
-Containers: `wallet-api` (REST + gRPC) · `wallet-worker` (cinco consumers + outbox) · `wallet-db`. Portas no host (só para depurar): REST 3002 · gRPC 50052 · Postgres 5434.
+Containers: `wallet-api` (REST) · `wallet-worker` (cinco consumers + outbox; se a conexão com o RabbitMQ cai, ele sai e o Docker reinicia) · `wallet-db`. Portas no host (só para depurar): REST 3002 · Postgres 5434.
 
 Dentro da pasta do serviço (`backend/wallet/`):
 
@@ -64,7 +64,7 @@ Dentro da pasta do serviço (`backend/wallet/`):
 ```
 src/
   domain/        regras de negócio (entities, valueObjects, events)
-  application/   casos de uso, DTOs e contratos (interfaces)
+  application/   casos de uso (com seus Input) e contratos (interfaces)
   infra/         HTTP, mensageria, banco, plataforma técnica, schemas de eventos
 test/
   unit/  integration/  fakes/  support/

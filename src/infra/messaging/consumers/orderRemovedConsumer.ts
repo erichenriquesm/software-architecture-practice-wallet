@@ -1,5 +1,4 @@
-import type { ReleaseReservationInput } from '../../../application/dtos/releaseReservationDto.js';
-import type { ReleaseReservation } from '../../../application/usecases/releaseReservation.js';
+import type { ReleaseReservation, ReleaseReservationInput } from '../../../application/usecases/releaseReservation.js';
 import type { MessageHandler } from '../../platform/messaging/consumer.js';
 import type { ConsumerQueue } from '../../platform/messaging/topology.js';
 import { correlationFrom, withCorrelation } from '../../platform/observability/correlation.js';

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { IdempotencyStore } from './idempotencyStore.js';
+import type { KyselyIdempotencyStore } from './idempotencyStore.js';
 
 const header = 'idempotency-key';
 const minimumTtlMs = 24 * 60 * 60 * 1_000;
@@ -20,7 +20,7 @@ const keyOf = (request: FastifyRequest): string | undefined => {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 };
 
-export const registerIdempotency = (app: FastifyInstance, store: IdempotencyStore, ttlMs = minimumTtlMs): void => {
+export const registerIdempotency = (app: FastifyInstance, store: KyselyIdempotencyStore, ttlMs = minimumTtlMs): void => {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const key = keyOf(request);
     if (request.method !== 'POST' || key === undefined) return;

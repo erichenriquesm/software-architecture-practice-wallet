@@ -53,7 +53,15 @@ export const registerRateLimit = (app: FastifyInstance, options: RateLimitOption
     const group = options.groups.find((candidate) => candidate.matches(request));
     if (!group) return;
 
-    const [first, ...others] = await Promise.all(checksFor(request, group, options).map((check) => options.limiter.check(check)));
+    let decisionsFromLimiter: RateLimitDecision[];
+    try {
+      decisionsFromLimiter = await Promise.all(checksFor(request, group, options).map((check) => options.limiter.check(check)));
+    } catch (error) {
+      // Fail-open: an unreachable Redis must not take the API down; the request goes through unlimited.
+      request.log.warn({ err: error, group: group.name }, 'rate limiter unavailable, request allowed');
+      return;
+    }
+    const [first, ...others] = decisionsFromLimiter;
     if (!first) return;
     const decisions = [first, ...others];
     const decision = tightest(first, others);

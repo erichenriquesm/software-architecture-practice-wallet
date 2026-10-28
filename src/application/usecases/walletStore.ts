@@ -2,17 +2,17 @@ import { Wallet } from '../../domain/entities/wallet.js';
 import { WalletNotFoundError } from '../../domain/errors.js';
 import type { AccountId } from '../../domain/valueObjects/accountId.js';
 import type { AccountGateway } from '../contracts/accountGateway.js';
-import type { DomainEventDispatcher } from '../contracts/domainEventDispatcher.js';
+import type { EventPublisher } from '../contracts/eventPublisher.js';
 import type { TransactionRunner } from '../contracts/transactionRunner.js';
 import type { WalletRepository } from '../contracts/walletRepository.js';
 
-/** The steps every wallet command shares: load (or open) the wallet, then save it and dispatch its events atomically. */
+/** The steps every wallet command shares: load (or open) the wallet, then save it and publish its events atomically. */
 export class WalletStore {
   constructor(
     private readonly walletRepository: WalletRepository,
     private readonly accountGateway: AccountGateway,
     private readonly transactionRunner: TransactionRunner,
-    private readonly domainEventDispatcher: DomainEventDispatcher,
+    private readonly eventPublisher: EventPublisher,
   ) {}
 
   async load(accountId: AccountId): Promise<Wallet> {
@@ -32,7 +32,7 @@ export class WalletStore {
   persist(wallet: Wallet): Promise<void> {
     return this.transactionRunner.run(async () => {
       await this.walletRepository.save(wallet);
-      await this.domainEventDispatcher.dispatch(wallet.pullEvents());
+      await this.eventPublisher.publish(wallet.pullEvents());
     });
   }
 }

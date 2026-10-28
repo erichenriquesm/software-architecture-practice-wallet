@@ -9,8 +9,7 @@ import { orderPlacedHandler, orderPlacedQueue } from './messaging/consumers/orde
 import { orderRemovedHandler, orderRemovedQueue } from './messaging/consumers/orderRemovedConsumer.js';
 import { orderVoidedHandler, orderVoidedQueue } from './messaging/consumers/orderVoidedConsumer.js';
 import { tradeExecutedHandler, tradeExecutedQueue, tradeExecutedUnits } from './messaging/consumers/tradeExecutedConsumer.js';
-import { walletEventsExchange } from './messaging/walletIntegrationEvents.js';
-import { requiredEnv } from './platform/config/env.js';
+import { walletEventsExchange } from './messaging/outboxEventPublisher.js';
 import { KyselyIdempotencyStore } from './platform/http/idempotency/idempotencyStore.js';
 import { connectRabbitMq, rabbitMqUrlFromEnv } from './platform/messaging/connection.js';
 import type { AmqpConnection } from './platform/messaging/connection.js';
@@ -18,15 +17,14 @@ import type { ConsumerOptions } from './platform/messaging/consumer.js';
 import { Consumer } from './platform/messaging/consumer.js';
 import { loadEnvelopeValidator } from './platform/messaging/envelope.js';
 import { OutboxRelay } from './platform/messaging/outbox.js';
-import { ReconnectingConnection } from './platform/messaging/reconnectingConnection.js';
 import { declareConsumerQueue } from './platform/messaging/topology.js';
-import { grpcIdentitySetting, healthPortSetting, postgresSettings } from './settings.js';
+import { accountGrpcSettings, healthPortSetting, postgresSettings } from './settings.js';
 
 const outboxLockKey = 7_002;
 const purgeIntervalMs = 60 * 60 * 1_000;
 
 const db = createDatabase(postgresSettings());
-const accountGateway = new GrpcAccountGateway({ address: requiredEnv('ACCOUNT_GRPC_ADDR'), identity: grpcIdentitySetting() });
+const accountGateway = new GrpcAccountGateway(accountGrpcSettings());
 const core = buildWalletCore({ db, accountGateway });
 const validate = loadEnvelopeValidator();
 const log = Fastify({ logger: true }).log;
@@ -48,40 +46,41 @@ const startConsumer = async (connection: AmqpConnection, options: Omit<ConsumerO
   return consumer;
 };
 
-/** Everything that lives on a broker connection; rebuilt from scratch on every reconnection. */
-const attach = async (connection: AmqpConnection): Promise<() => Promise<void>> => {
-  const relay = new OutboxRelay(db, await connection.createConfirmChannel(), { exchange: walletEventsExchange, lockKey: outboxLockKey });
-  relay.start();
-  const consumers = await Promise.all(consumerOptions.map((options) => startConsumer(connection, options)));
-  return async () => {
-    relay.stop();
-    await Promise.all(consumers.map((consumer) => consumer.stop().catch(() => undefined)));
-  };
-};
-
-const broker = new ReconnectingConnection({
-  connect: () => connectRabbitMq(rabbitMqUrlFromEnv()),
-  setup: attach,
-  onEvent: (event, detail) => log.info({ event, detail: detail instanceof Error ? detail.message : detail }, 'rabbitmq connection'),
-});
-
 const idempotencyStore = new KyselyIdempotencyStore(db);
 const purge = setInterval(() => void idempotencyStore.purgeExpired(new Date()).catch(() => undefined), purgeIntervalMs);
 
+let connected = false;
 const healthServer = Fastify({ logger: false });
-registerHealthRoutes(healthServer, serviceName, [
-  new PostgresProbe(db),
-  { dependency: 'rabbitmq', isHealthy: async () => broker.isConnected() },
-]);
+registerHealthRoutes(healthServer, serviceName, [new PostgresProbe(db), { dependency: 'rabbitmq', isHealthy: async () => connected }]);
 await healthServer.listen({ host: '0.0.0.0', port: healthPortSetting() });
-await broker.start();
 
-const shutdown = async (): Promise<void> => {
+// One connection, no in-process reconnect: when it drops the worker exits and Docker restarts it.
+// Outbox and inbox make the restart lossless.
+const connection = await connectRabbitMq(rabbitMqUrlFromEnv());
+const relay = new OutboxRelay(db, await connection.createConfirmChannel(), { exchange: walletEventsExchange, lockKey: outboxLockKey });
+relay.start();
+const consumers = await Promise.all(consumerOptions.map((options) => startConsumer(connection, options)));
+connected = true;
+
+const stop = async (): Promise<void> => {
+  connected = false;
   clearInterval(purge);
-  await broker.stop();
+  relay.stop();
+  await Promise.all(consumers.map((consumer) => consumer.stop().catch(() => undefined)));
+  await connection.close().catch(() => undefined);
   await healthServer.close();
   accountGateway.close();
   await db.destroy();
 };
-process.once('SIGTERM', shutdown);
-process.once('SIGINT', shutdown);
+
+const exitOnLostConnection = (reason: unknown): void => {
+  if (!connected) return;
+  log.error({ reason: reason instanceof Error ? reason.message : reason }, 'rabbitmq connection lost, exiting');
+  // Exit at once: closing channels on a dead connection can hang, and the outbox + inbox make a hard exit safe.
+  process.exit(1);
+};
+connection.on('error', exitOnLostConnection);
+connection.on('close', exitOnLostConnection);
+
+process.once('SIGTERM', stop);
+process.once('SIGINT', stop);

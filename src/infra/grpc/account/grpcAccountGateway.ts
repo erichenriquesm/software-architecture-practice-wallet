@@ -5,9 +5,9 @@ import { AccountServiceClient } from '../../generated/account.js';
 import { currentCorrelation } from '../../platform/observability/correlation.js';
 import type { RetryPolicy } from '../../platform/resilience/retry.js';
 import { grpcRetryPolicy, retry } from '../../platform/resilience/retry.js';
-import type { ServiceIdentity } from '../../platform/security/serviceAuth.js';
-import { identify } from '../../platform/security/serviceAuth.js';
 import { translateExists } from './accountAcl.js';
+
+export const serviceTokenHeader = 'x-service-token';
 
 const transientCodes = new Set([grpc.status.UNAVAILABLE, grpc.status.DEADLINE_EXCEEDED, grpc.status.RESOURCE_EXHAUSTED]);
 
@@ -26,11 +26,12 @@ export class AccountServiceUnavailableError extends Error {
 
 export interface AccountGatewayOptions {
   readonly address: string;
-  readonly identity: ServiceIdentity;
+  readonly token: string;
   readonly deadlineMs?: number;
   readonly retryPolicy?: RetryPolicy;
 }
 
+/** AccountService.Exists with a 500 ms deadline, retried with jitter on transient codes; NOT_FOUND means "does not exist". */
 export class GrpcAccountGateway implements AccountGateway {
   private readonly client: AccountServiceClient;
 
@@ -39,13 +40,14 @@ export class GrpcAccountGateway implements AccountGateway {
   }
 
   async exists(accountId: string): Promise<boolean> {
-    const response = await retry(() => this.call(accountId), this.options.retryPolicy ?? grpcRetryPolicy, {
-      isTransient: isTransientGrpcError,
-    }).catch((error: unknown) => {
+    try {
+      const response = await retry(() => this.call(accountId), this.options.retryPolicy ?? grpcRetryPolicy, { isTransient: isTransientGrpcError });
+      return translateExists(response);
+    } catch (error) {
+      if (isServiceError(error) && error.code === grpc.status.NOT_FOUND) return false;
       if (isTransientGrpcError(error)) throw new AccountServiceUnavailableError(error);
       throw error;
-    });
-    return translateExists(response);
+    }
   }
 
   close(): void {
@@ -53,7 +55,8 @@ export class GrpcAccountGateway implements AccountGateway {
   }
 
   private call(accountId: string): Promise<ExistsResponse> {
-    const metadata = identify(new grpc.Metadata(), this.options.identity);
+    const metadata = new grpc.Metadata();
+    metadata.set(serviceTokenHeader, this.options.token);
     metadata.set('x-correlation-id', currentCorrelation().correlationId);
     const deadline = Date.now() + (this.options.deadlineMs ?? 500);
     return new Promise((resolve, reject) => {

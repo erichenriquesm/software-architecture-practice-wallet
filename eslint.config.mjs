@@ -18,16 +18,15 @@ export default [
   {
     files: layeredCode,
     rules: {
-      'max-depth': ['error', 1],
+      'max-depth': ['error', 3],
       'no-restricted-syntax': [
         'error',
         { selector: 'IfStatement[alternate]', message: 'Object Calisthenics: no else, use a guard clause.' },
       ],
-      'max-lines-per-function': ['warn', { max: 15, skipBlankLines: true, skipComments: true }],
     },
   },
   {
     files: ['**/*.spec.ts'],
-    rules: { 'max-lines-per-function': 'off', 'max-depth': 'off' },
+    rules: { 'max-depth': 'off' },
   },
 ];

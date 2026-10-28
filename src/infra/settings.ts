@@ -2,12 +2,8 @@ import { networkInterfaces } from 'node:os';
 import type { PostgresSettings } from './database/postgres.js';
 import { MissingConfigurationError, numberEnv, requiredEnv } from './platform/config/env.js';
 import type { RateLimitPolicy } from './platform/http/rateLimit/slidingWindow.js';
-import type { AllowedCallers, ServiceIdentity } from './platform/security/serviceAuth.js';
-import { parseAllowedCallers } from './platform/security/serviceAuth.js';
 
 export const apiPortSetting = (): number => numberEnv('API_PORT', 3000);
-
-export const grpcPortSetting = (): number => numberEnv('GRPC_PORT', 50051);
 
 export const healthPortSetting = (): number => numberEnv('HEALTH_PORT', 3001);
 
@@ -33,12 +29,16 @@ export const redisSettings = (): RedisSettings => ({
   password: requiredEnv('REDIS_PASSWORD'),
 });
 
-export const grpcIdentitySetting = (): ServiceIdentity => ({
-  name: requiredEnv('GRPC_SERVICE_NAME'),
-  token: requiredEnv('GRPC_SERVICE_TOKEN'),
-});
+export interface AccountGrpcSettings {
+  readonly address: string;
+  readonly token: string;
+}
 
-export const grpcAllowedCallersSetting = (): AllowedCallers => parseAllowedCallers(process.env.GRPC_ALLOWED_CALLERS ?? '');
+/** Where the account service answers Exists, and the shared token sent as x-service-token. */
+export const accountGrpcSettings = (): AccountGrpcSettings => ({
+  address: requiredEnv('ACCOUNT_GRPC_ADDR'),
+  token: requiredEnv('ACCOUNT_GRPC_TOKEN'),
+});
 
 const unitMs: ReadonlyMap<string, number> = new Map([
   ['s', 1_000],

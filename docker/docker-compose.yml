@@ -1,6 +1,6 @@
 x-watch: &watch
   watch:
-    - action: sync
+    - action: sync+restart
       path: ../src
       target: /app/src
       ignore: [infra/generated/, infra/schemas/]
@@ -36,11 +36,11 @@ services:
   wallet-api:
     build: { context: .., dockerfile: docker/Dockerfile, target: dev }
     container_name: wallet-api
-    command: ["sh", "-c", "npm run proto:gen && npx tsx watch src/infra/api.ts"]
+    restart: unless-stopped
+    command: ["sh", "-c", "npm run proto:gen && exec npx tsx src/infra/api.ts"]
     env_file: ../.env
     ports:
       - "127.0.0.1:3002:3000"
-      - "127.0.0.1:50052:50051"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/health"]
       interval: 5s
@@ -55,7 +55,8 @@ services:
   wallet-worker:
     build: { context: .., dockerfile: docker/Dockerfile, target: dev }
     container_name: wallet-worker
-    command: ["npx", "tsx", "watch", "src/infra/worker.ts"]
+    restart: unless-stopped
+    command: ["npx", "tsx", "src/infra/worker.ts"]
     env_file: ../.env
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3001/health"]

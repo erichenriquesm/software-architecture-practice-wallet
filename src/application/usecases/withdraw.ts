@@ -3,19 +3,23 @@ import { AssetId } from '../../domain/valueObjects/assetId.js';
 import { Quantity } from '../../domain/valueObjects/quantity.js';
 import type { Clock } from '../contracts/clock.js';
 import type { MarketCatalog } from '../contracts/marketCatalog.js';
-import type { FundsMovement } from '../dtos/fundsMovement.js';
 import { retryOnConflict } from './retryOnConflict.js';
-import type { UseCase } from './useCase.js';
 import type { WalletStore } from './walletStore.js';
 
-export class Withdraw implements UseCase<[movement: FundsMovement], void> {
+export interface WithdrawInput {
+  readonly accountId: string;
+  readonly assetId: string;
+  readonly quantity: string;
+}
+
+export class Withdraw {
   constructor(
     private readonly walletStore: WalletStore,
     private readonly marketCatalog: MarketCatalog,
     private readonly clock: Clock,
   ) {}
 
-  async execute(movement: FundsMovement): Promise<void> {
+  async execute(movement: WithdrawInput): Promise<void> {
     const accountId = AccountId.from(movement.accountId);
     const asset = AssetId.from(movement.assetId);
     const quantity = Quantity.from(movement.quantity);

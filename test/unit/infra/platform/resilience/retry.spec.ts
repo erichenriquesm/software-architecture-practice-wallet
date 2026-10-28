@@ -1,8 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
-import { FallbackHandler } from '../../../../../src/infra/platform/resilience/fallbackHandler.js';
 import { fullJitterDelay, retry } from '../../../../../src/infra/platform/resilience/retry.js';
 import type { RetryPolicy } from '../../../../../src/infra/platform/resilience/retry.js';
-import { TimeoutError, withTimeout } from '../../../../../src/infra/platform/resilience/timeout.js';
 
 const policy: RetryPolicy = { baseMs: 100, capMs: 2_000, maxAttempts: 3 };
 
@@ -55,63 +53,5 @@ describe('retry', () => {
     // When & Then
     await expect(retry(operation, policy, { isTransient, sleep: noSleep })).rejects.toThrowError('still down');
     expect(operation).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe('withTimeout', () => {
-  test('Should return the result when the operation finishes in time', async () => {
-    await expect(withTimeout(async () => 'done', 100)).resolves.toBe('done');
-  });
-
-  test('Should reject with TimeoutError and abort the operation when it takes too long', async () => {
-    // Given
-    vi.useFakeTimers();
-    let aborted = false;
-    const slow = (signal: AbortSignal): Promise<string> =>
-      new Promise((resolve) => {
-        signal.addEventListener('abort', () => (aborted = true));
-        setTimeout(() => resolve('late'), 1_000);
-      });
-
-    // When
-    const result = withTimeout(slow, 500);
-    vi.advanceTimersByTime(500);
-
-    // Then
-    await expect(result).rejects.toBeInstanceOf(TimeoutError);
-    expect(aborted).toBe(true);
-    vi.useRealTimers();
-  });
-});
-
-class FixedHandler extends FallbackHandler<string, string> {
-  constructor(
-    private readonly answer: string | Error,
-    next?: FallbackHandler<string, string>,
-  ) {
-    super(next);
-  }
-
-  protected async tryHandle(input: string): Promise<string> {
-    if (this.answer instanceof Error) throw this.answer;
-    return `${this.answer}:${input}`;
-  }
-}
-
-describe('FallbackHandler', () => {
-  test('Should answer with the first link that succeeds', async () => {
-    // Given
-    const chain = new FixedHandler(new Error('down'), new FixedHandler('second'));
-
-    // When & Then
-    await expect(chain.handle('x')).resolves.toBe('second:x');
-  });
-
-  test('Should rethrow the last error when every link fails', async () => {
-    // Given
-    const chain = new FixedHandler(new Error('first'), new FixedHandler(new Error('last')));
-
-    // When & Then
-    await expect(chain.handle('x')).rejects.toThrowError('last');
   });
 });

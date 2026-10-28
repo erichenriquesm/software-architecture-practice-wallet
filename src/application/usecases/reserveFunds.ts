@@ -8,14 +8,21 @@ import { Price } from '../../domain/valueObjects/price.js';
 import { Quantity } from '../../domain/valueObjects/quantity.js';
 import { Side } from '../../domain/valueObjects/side.js';
 import type { Clock } from '../contracts/clock.js';
-import type { DomainEventDispatcher } from '../contracts/domainEventDispatcher.js';
+import type { EventPublisher } from '../contracts/eventPublisher.js';
 import type { MarketCatalog } from '../contracts/marketCatalog.js';
 import type { TransactionRunner } from '../contracts/transactionRunner.js';
 import type { VoidedOrders } from '../contracts/voidedOrders.js';
-import type { ReserveFundsInput } from '../dtos/reserveFundsDto.js';
 import { retryOnConflict } from './retryOnConflict.js';
-import type { UseCase } from './useCase.js';
 import type { WalletStore } from './walletStore.js';
+
+export interface ReserveFundsInput {
+  readonly orderId: string;
+  readonly accountId: string;
+  readonly marketId: string;
+  readonly side: string;
+  readonly quantity: string;
+  readonly price: string;
+}
 
 const missingAsUndefined = (error: unknown): undefined => {
   if (error instanceof WalletNotFoundError) return undefined;
@@ -31,13 +38,13 @@ const lackOfFundsAsFalse = (error: unknown): false => {
  * Step 2 of saga S2. A business refusal (no funds, no account) is an event, never an exception, so the
  * order service can compensate. An order already voided (tombstone) never gets a reservation.
  */
-export class ReserveFunds implements UseCase<[input: ReserveFundsInput], void> {
+export class ReserveFunds {
   constructor(
     private readonly walletStore: WalletStore,
     private readonly voidedOrders: VoidedOrders,
     private readonly marketCatalog: MarketCatalog,
     private readonly transactionRunner: TransactionRunner,
-    private readonly domainEventDispatcher: DomainEventDispatcher,
+    private readonly eventPublisher: EventPublisher,
     private readonly clock: Clock,
   ) {}
 
@@ -74,7 +81,7 @@ export class ReserveFunds implements UseCase<[input: ReserveFundsInput], void> {
       reason,
       occurredAt: this.clock.now(),
     };
-    return this.domainEventDispatcher.dispatch([event]);
+    return this.eventPublisher.publish([event]);
   }
 
   private orderFrom(input: ReserveFundsInput): OrderToReserve {

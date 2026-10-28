@@ -8,14 +8,7 @@ export type BeginResult =
   | { readonly kind: 'inProgress' }
   | { readonly kind: 'mismatch' };
 
-export interface IdempotencyStore {
-  begin(scope: string, key: string, requestHash: string, ttlMs: number): Promise<BeginResult>;
-  complete(scope: string, key: string, statusCode: number, body: unknown): Promise<void>;
-  release(scope: string, key: string): Promise<void>;
-  purgeExpired(now: Date): Promise<number>;
-}
-
-export class KyselyIdempotencyStore implements IdempotencyStore {
+export class KyselyIdempotencyStore {
   constructor(private readonly db: Kysely<Database>) {}
 
   async begin(scope: string, key: string, requestHash: string, ttlMs: number): Promise<BeginResult> {

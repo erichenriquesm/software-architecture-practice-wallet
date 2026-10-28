@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { FundsMovement } from '../../application/dtos/fundsMovement.js';
-import type { Deposit } from '../../application/usecases/deposit.js';
-import type { Withdraw } from '../../application/usecases/withdraw.js';
+import type { Deposit, DepositInput } from '../../application/usecases/deposit.js';
+import type { Withdraw, WithdrawInput } from '../../application/usecases/withdraw.js';
 import {
   ConcurrentWalletUpdateError,
   InsufficientFundsError,
@@ -72,14 +71,14 @@ const correlationOf = (request: FastifyRequest) => correlationFrom(request.heade
 export const registerWalletRoutes = (app: FastifyInstance, useCases: WalletRouteUseCases): void => {
   app.post('/deposit', { schema: { body: movementBody } }, async (request, reply) => {
     const correlation = correlationOf(request);
-    const movement = request.body as FundsMovement;
+    const movement = request.body as DepositInput;
     await withCorrelation(correlation, () => useCases.deposit.execute(movement));
     return reply.status(204).header('x-correlation-id', correlation.correlationId).send();
   });
 
   app.post('/withdraw', { schema: { body: movementBody } }, async (request, reply) => {
     const correlation = correlationOf(request);
-    const movement = request.body as FundsMovement;
+    const movement = request.body as WithdrawInput;
     await withCorrelation(correlation, () => useCases.withdraw.execute(movement));
     return reply.status(204).header('x-correlation-id', correlation.correlationId).send();
   });
