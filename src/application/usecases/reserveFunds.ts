@@ -1,5 +1,5 @@
 import type { OrderToReserve, Wallet } from '../../domain/entities/wallet.js';
-import type { FundsReservationRejected, ReservationRejectionReason } from '../../domain/domainEvents/fundsReservationRejected.js';
+import type { FundsReservationRejected, ReservationRejectionReason } from '../../domain/events/fundsReservationRejected.js';
 import { InsufficientFundsError, WalletNotFoundError } from '../../domain/errors.js';
 import { AccountId } from '../../domain/valueObjects/accountId.js';
 import { MarketId } from '../../domain/valueObjects/marketId.js';

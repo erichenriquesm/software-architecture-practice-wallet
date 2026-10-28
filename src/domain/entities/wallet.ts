@@ -1,6 +1,6 @@
-import type { BalanceChanged } from '../domainEvents/balanceChanged.js';
-import type { DomainEvent } from '../domainEvents/domainEvent.js';
-import type { FundsReserved } from '../domainEvents/fundsReserved.js';
+import type { BalanceChanged } from '../events/balanceChanged.js';
+import type { DomainEvent } from '../events/domainEvent.js';
+import type { FundsReserved } from '../events/fundsReserved.js';
 import { InvalidWalletDataError, ReservationNotFoundError } from '../errors.js';
 import type { AccountId } from '../valueObjects/accountId.js';
 import type { AssetId } from '../valueObjects/assetId.js';

@@ -1,4 +1,4 @@
-import type { DomainEvent } from '../domainEvents/domainEvent.js';
+import type { DomainEvent } from '../events/domainEvent.js';
 
 export abstract class AggregateRoot<TEvent extends DomainEvent = DomainEvent> {
   private recordedEvents: TEvent[] = [];

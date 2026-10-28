@@ -51,7 +51,7 @@ Dentro da pasta do serviço (`backend/wallet/`):
 
 ```
 src/
-  domain/        regras de negócio (entities, valueObjects, domainEvents, domainServices)
+  domain/        regras de negócio (entities, valueObjects, events, services)
   application/   casos de uso, DTOs e contratos (interfaces)
   infra/         HTTP, mensageria, banco, plataforma técnica, contratos de eventos
 test/

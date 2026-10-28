@@ -1,5 +1,5 @@
 import type { DomainEventDispatcher } from '../../src/application/contracts/domainEventDispatcher.js';
-import type { DomainEvent } from '../../src/domain/domainEvents/domainEvent.js';
+import type { DomainEvent } from '../../src/domain/events/domainEvent.js';
 
 export class RecordingDomainEventDispatcher implements DomainEventDispatcher {
   readonly dispatched: DomainEvent[] = [];

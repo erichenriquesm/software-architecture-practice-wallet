@@ -1,7 +1,7 @@
-import type { BalanceChanged } from '../../domain/domainEvents/balanceChanged.js';
-import type { DomainEvent } from '../../domain/domainEvents/domainEvent.js';
-import type { FundsReservationRejected } from '../../domain/domainEvents/fundsReservationRejected.js';
-import type { FundsReserved } from '../../domain/domainEvents/fundsReserved.js';
+import type { BalanceChanged } from '../../domain/events/balanceChanged.js';
+import type { DomainEvent } from '../../domain/events/domainEvent.js';
+import type { FundsReservationRejected } from '../../domain/events/fundsReservationRejected.js';
+import type { FundsReserved } from '../../domain/events/fundsReserved.js';
 import type { Database } from '../database/database.js';
 import type { KyselyTransactionRunner } from '../database/kyselyTransactionRunner.js';
 import type { InProcessDomainEventDispatcher } from '../platform/events/inProcessDomainEventDispatcher.js';

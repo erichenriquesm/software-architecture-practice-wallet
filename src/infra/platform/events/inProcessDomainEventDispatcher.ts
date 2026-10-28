@@ -1,5 +1,5 @@
 import type { DomainEventDispatcher } from '../../../application/contracts/domainEventDispatcher.js';
-import type { DomainEvent } from '../../../domain/domainEvents/domainEvent.js';
+import type { DomainEvent } from '../../../domain/events/domainEvent.js';
 
 export type TransactionalHandler<TEvent extends DomainEvent = DomainEvent> = (event: TEvent) => Promise<void>;
 
