@@ -46,7 +46,7 @@ Este serviço roda junto com a plataforma, a partir do [repositório guarda-chuv
 
 ```bash
 git clone https://github.com/erichenriquesm/software-architecture-practice.git
-cd software-architecture-practice/backend
+cd software-architecture-practice
 make clone
 make up
 ```
@@ -57,6 +57,8 @@ Dentro da pasta do serviço (`backend/wallet/`):
 
 | Comando | O que faz |
 |---|---|
+| `make up` · `make down` | sobe só este serviço (com RabbitMQ e Redis, sem os outros serviços nem o edge) e roda as migrações · derruba os containers dele |
+| `make watch` · `make ps` · `make logs` | o mesmo `up` em primeiro plano com Compose Watch · containers e saúde · logs |
 | `make test` | typecheck, lint, regras de arquitetura, testes de unidade e de integração (tudo em container) |
 | `make migrate` · `make migrate-status` · `make migrate-rollback` · `make migration name=...` | migrações no estilo Laravel |
 | `make deps` | instala o `node_modules` na sua máquina, só para o editor |
